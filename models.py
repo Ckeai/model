@@ -45,24 +45,23 @@ class SpGAT(nn.Module):
                                              )
 
     def forward(self, Corpus_, batch_inputs, entity_embeddings, relation_embed,
-                edge_list, edge_type, edge_embed, edge_list_nhop, edge_type_nhop):
+                edge_list, edge_type, edge_embed):
         x = entity_embeddings
 
-        edge_embed_nhop = relation_embed[
-            edge_type_nhop[:, 0]] + relation_embed[edge_type_nhop[:, 1]]
+        #edge_embed_nhop = relation_embed[
+        #    edge_type_nhop[:, 0]] + relation_embed[edge_type_nhop[:, 1]]
 
-        x = torch.cat([att(x, edge_list, edge_embed, edge_list_nhop, edge_embed_nhop)
+        x = torch.cat([att(x, edge_list, edge_embed)
                        for att in self.attentions], dim=1)
         x = self.dropout_layer(x)
 
         out_relation_1 = relation_embed.mm(self.W)
 
         edge_embed = out_relation_1[edge_type]
-        edge_embed_nhop = out_relation_1[
-            edge_type_nhop[:, 0]] + out_relation_1[edge_type_nhop[:, 1]]
+        #edge_embed_nhop = out_relation_1[
+        #    edge_type_nhop[:, 0]] + out_relation_1[edge_type_nhop[:, 1]]
 
-        x = F.elu(self.out_att(x, edge_list, edge_embed,
-                               edge_list_nhop, edge_embed_nhop))
+        x = F.elu(self.out_att(x, edge_list, edge_embed))
         return x, out_relation_1
 
 
@@ -110,21 +109,21 @@ class SpKBGATModified(nn.Module):
             size=(self.entity_in_dim, self.entity_out_dim_1 * self.nheads_GAT_1)))
         nn.init.xavier_uniform_(self.W_entities.data, gain=1.414)
 
-    def forward(self, Corpus_, adj, batch_inputs, train_indices_nhop):
+    def forward(self, Corpus_, adj, batch_inputs):
         # getting edge list
         edge_list = adj[0]
         edge_type = adj[1]
 
-        edge_list_nhop = torch.cat(
-            (train_indices_nhop[:, 3].unsqueeze(-1), train_indices_nhop[:, 0].unsqueeze(-1)), dim=1).t()
-        edge_type_nhop = torch.cat(
-            [train_indices_nhop[:, 1].unsqueeze(-1), train_indices_nhop[:, 2].unsqueeze(-1)], dim=1)
+        #edge_list_nhop = torch.cat(
+        #    (train_indices_nhop[:, 3].unsqueeze(-1), train_indices_nhop[:, 0].unsqueeze(-1)), dim=1).t()
+        #edge_type_nhop = torch.cat(
+        #    [train_indices_nhop[:, 1].unsqueeze(-1), train_indices_nhop[:, 2].unsqueeze(-1)], dim=1)
 
         if(CUDA):
             edge_list = edge_list.cuda()
             edge_type = edge_type.cuda()
-            edge_list_nhop = edge_list_nhop.cuda()
-            edge_type_nhop = edge_type_nhop.cuda()
+        #    edge_list_nhop = edge_list_nhop.cuda()
+        #    edge_type_nhop = edge_type_nhop.cuda()
 
         edge_embed = self.relation_embeddings[edge_type]
 
@@ -138,7 +137,7 @@ class SpKBGATModified(nn.Module):
 
         out_entity_1, out_relation_1 = self.sparse_gat_1(
             Corpus_, batch_inputs, self.entity_embeddings, self.relation_embeddings,
-            edge_list, edge_type, edge_embed, edge_list_nhop, edge_type_nhop)
+            edge_list, edge_type, edge_embed)
 
         mask_indices = torch.unique(batch_inputs[:, 2]).cuda()
         mask = torch.zeros(self.entity_embeddings.shape[0]).cuda()

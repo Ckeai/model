@@ -29,7 +29,7 @@ def parse_args():
     args = argparse.ArgumentParser()
     # network arguments
     args.add_argument("-data", "--data",
-                      default="./data/WN18RR", help="data directory")
+                      default="./data/WN18RR/", help="data directory")
     args.add_argument("-e_g", "--epochs_gat", type=int,
                       default=3600, help="Number of epochs")
     args.add_argument("-e_c", "--epochs_conv", type=int,
@@ -44,10 +44,14 @@ def parse_args():
                       default=50, help="Size of embeddings (if pretrained not used)")
     args.add_argument("-l", "--lr", type=float, default=1e-3)
     args.add_argument("-g2hop", "--get_2hop", type=bool, default=False)
-    args.add_argument("-u2hop", "--use_2hop", type=bool, default=True)
+    #(hsm)修改default为False
+    args.add_argument("-u2hop", "--use_2hop", type=bool, default=False)
     args.add_argument("-p2hop", "--partial_2hop", type=bool, default=False)
+    #(hsm)修改
+    #args.add_argument("-outfolder", "--output_folder",
+    #                  default="./checkpoints/wn/out/", help="Folder name to save the models.")
     args.add_argument("-outfolder", "--output_folder",
-                      default="./checkpoints/wn/out/", help="Folder name to save the models.")
+                     default="./checkpoints/", help="Folder name to save the models.")
 
     # arguments for GAT
     args.add_argument("-b_gat", "--batch_size_gat", type=int,
@@ -111,7 +115,7 @@ Corpus_, entity_embeddings, relation_embeddings = load_data(args)
 
 
 if(args.get_2hop):
-    file = args.data + "/2hop.pickle"
+    file = args.data + "2hop.pickle"
     with open(file, 'wb') as handle:
         pickle.dump(Corpus_.node_neighbors_2hop, handle,
                     protocol=pickle.HIGHEST_PROTOCOL)
@@ -119,7 +123,7 @@ if(args.get_2hop):
 
 if(args.use_2hop):
     print("Opening node_neighbors pickle object")
-    file = args.data + "/2hop.pickle"
+    file = args.data + "2hop.pickle"
     with open(file, 'rb') as handle:
         node_neighbors_2hop = pickle.load(handle)
 
@@ -190,12 +194,12 @@ def train_gat(args):
         current_batch_2hop_indices = Corpus_.get_batch_nhop_neighbors_all(args,
                                                                           Corpus_.unique_entities_train, node_neighbors_2hop)
 
-    if CUDA:
-        current_batch_2hop_indices = Variable(
-            torch.LongTensor(current_batch_2hop_indices)).cuda()
-    else:
-        current_batch_2hop_indices = Variable(
-            torch.LongTensor(current_batch_2hop_indices))
+        if CUDA:
+            current_batch_2hop_indices = Variable(
+                torch.LongTensor(current_batch_2hop_indices)).cuda()
+        else:
+            current_batch_2hop_indices = Variable(
+                torch.LongTensor(current_batch_2hop_indices))
 
     epoch_losses = []   # losses of all epochs
     print("Number of epochs {}".format(args.epochs_gat))
@@ -232,7 +236,7 @@ def train_gat(args):
 
             # forward pass
             entity_embed, relation_embed = model_gat(
-                Corpus_, Corpus_.train_adj_matrix, train_indices, current_batch_2hop_indices)
+                Corpus_, Corpus_.train_adj_matrix, train_indices)
 
             optimizer.zero_grad()
 

@@ -82,16 +82,18 @@ class SpGraphAttentionLayer(nn.Module):
 
     def __init__(self, num_nodes, in_features, out_features, nrela_dim, dropout, alpha, concat=True):
         super(SpGraphAttentionLayer, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
+        self.in_features = in_features  # 输入维度
+        self.out_features = out_features  # 输出维度
         self.num_nodes = num_nodes
         self.alpha = alpha
         self.concat = concat
-        self.nrela_dim = nrela_dim
+        self.nrela_dim = nrela_dim  # 关系维度
 
+        # 应该是对拼接后的头尾关系做线性转换的W_1，初始化参数
         self.a = nn.Parameter(torch.zeros(
             size=(out_features, 2 * in_features + nrela_dim)))
         nn.init.xavier_normal_(self.a.data, gain=1.414)
+        # 初始化a^T
         self.a_2 = nn.Parameter(torch.zeros(size=(1, out_features)))
         nn.init.xavier_normal_(self.a_2.data, gain=1.414)
 
@@ -99,43 +101,47 @@ class SpGraphAttentionLayer(nn.Module):
         self.leakyrelu = nn.LeakyReLU(self.alpha)
         self.special_spmm_final = SpecialSpmmFinal()
 
-    def forward(self, input, edge, edge_embed, edge_list_nhop, edge_embed_nhop):
+    def forward(self, input, edge, edge_embed):
         N = input.size()[0]
 
+        # (不用邻居可以删除)
         # Self-attention on the nodes - Shared attention mechanism
-        edge = torch.cat((edge[:, :], edge_list_nhop[:, :]), dim=1)
-        edge_embed = torch.cat(
-            (edge_embed[:, :], edge_embed_nhop[:, :]), dim=0)
+        # edge = torch.cat((edge[:, :], edge_list_nhop[:, :]), dim=1)#头和头id相连，尾巴和尾巴id相连
+        # edge_embed = torch.cat(
+        #   (edge_embed[:, :], edge_embed_nhop[:, :]), dim=0)
 
+        # (修改)
         edge_h = torch.cat(
-            (input[edge[0, :], :], input[edge[1, :], :], edge_embed[:, :]), dim=1).t()
-        # edge_h: (2*in_dim + nrela_dim) x E
+           (input[edge[0, :], :], input[edge[1, :], :], edge_embed[:, :]), dim=1).t()#将edge中的头、尾id对应的向量取出，与关系按列拼接，扩展维度 ，并转置
+        ## edge_h: (2*in_dim + nrela_dim) x E
 
-        edge_m = self.a.mm(edge_h)
+
+
+        edge_m = self.a.mm(edge_h)  # c_(ijk)
         # edge_m: D * E
 
         # to be checked later
         powers = -self.leakyrelu(self.a_2.mm(edge_m).squeeze())
-        edge_e = torch.exp(powers).unsqueeze(1)
-        assert not torch.isnan(edge_e).any()
+        edge_e = torch.exp(powers).unsqueeze(1)  # exp后的注意力值
+        assert not torch.isnan(edge_e).any()  # 判断是否有元素为0
         # edge_e: E
 
         e_rowsum = self.special_spmm_final(
             edge, edge_e, N, edge_e.shape[0], 1)
         e_rowsum[e_rowsum == 0.0] = 1e-12
 
-        e_rowsum = e_rowsum
+        e_rowsum = e_rowsum  # 元素是每个实体的邻居注意力之和，即softmax的分母
         # e_rowsum: N x 1
         edge_e = edge_e.squeeze(1)
 
         edge_e = self.dropout(edge_e)
         # edge_e: E
 
-        edge_w = (edge_e * edge_m).t()
+        edge_w = (edge_e * edge_m).t()  # 先点乘再转置 softmax的分子乘以c_(ijk)
         # edge_w: E * D
 
         h_prime = self.special_spmm_final(
-            edge, edge_w, N, edge_w.shape[0], self.out_features)
+            edge, edge_w, N, edge_w.shape[0], self.out_features)  # 用注意力对实体聚合信息了
 
         assert not torch.isnan(h_prime).any()
         # h_prime: N x out
@@ -150,5 +156,6 @@ class SpGraphAttentionLayer(nn.Module):
             # if this layer is last layer,
             return h_prime
 
-    def __repr__(self):
-        return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+
+def __repr__(self):
+    return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
