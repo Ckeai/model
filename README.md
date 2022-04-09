@@ -7,3 +7,4 @@
 	
 注：未加入hyper对实体关系作交互
 ### Effect
+![image](https://github.com/Ckeai/model/blob/modify_model/result.png)
