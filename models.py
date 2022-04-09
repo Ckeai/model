@@ -6,8 +6,7 @@ import time
 from layers import SpGraphAttentionLayer, ConvKB
 
 CUDA = torch.cuda.is_available()  # checking cuda availability
-
-
+'''
 class SpGAT(nn.Module):
     def __init__(self, num_nodes, nfeat, nhid, relation_dim, dropout, alpha, nheads):
         """
@@ -63,7 +62,74 @@ class SpGAT(nn.Module):
 
         x = F.elu(self.out_att(x, edge_list, edge_embed))
         return x, out_relation_1
+        
+'''
 
+
+class SpGAT(nn.Module):
+    def __init__(self, num_nodes, nfeat, nhid, relation_dim, dropout, alpha, nheads):
+        """
+            Sparse version of GAT
+            nfeat -> Entity Input Embedding dimensions
+            nhid  -> Entity Output Embedding dimensions
+            relation_dim -> Relation Embedding dimensions
+            num_nodes -> number of nodes in the Graph
+            nheads -> Used for Multihead attention
+
+        """
+        super(SpGAT, self).__init__()
+        self.dropout = dropout
+        self.dropout_layer = nn.Dropout(self.dropout)
+        self.attentions = [SpGraphAttentionLayer(num_nodes, nfeat,
+                                                 nhid,
+                                                 relation_dim,
+                                                 dropout=dropout,
+                                                 alpha=alpha,
+                                                 concat=True)
+                           for _ in range(nheads)]
+
+        for i, attention in enumerate(self.attentions):
+            self.add_module('attention_{}'.format(i), attention)
+
+        # W matrix to convert h_input to h_output dimension(hsm)改W为W_1
+        self.W_1 = nn.Parameter(torch.zeros(size=(relation_dim, nheads * nhid)))
+        nn.init.xavier_uniform_(self.W_1.data, gain=1.414)
+
+        # hsm 添加对实体的线性转换矩阵
+        self.W_2 = nn.Parameter(torch.zeros(size=(relation_dim, nheads * nhid)))
+
+        nn.init.xavier_uniform_(self.W_2.data, gain=1.414)
+
+        self.out_att = SpGraphAttentionLayer(num_nodes, nhid * nheads,
+                                         nheads * nhid, nheads * nhid,
+                                         dropout=dropout,
+                                         alpha=alpha,
+                                         concat=False
+                                         )
+
+
+    def forward(self, Corpus_, batch_inputs, unique_entity_embed, unique_relation_embed ,
+                edge_list, edge_type, edge_embed):
+        #对h进行更新
+        x = torch.cat([att(unique_entity_embed, edge_list, edge_embed, edge_type, flag=False)
+                       for att in self.attentions], dim=1)
+        x = self.dropout_layer(x)
+
+        out_unique_relation_embed = unique_relation_embed.mm(self.W_1)
+        out_relation_embed_1 = out_unique_relation_embed[edge_type]
+
+        x = F.elu(self.out_att(x, edge_list, out_relation_embed_1, edge_type, flag = False))
+
+        # (hsm)对r进行更新
+        x_r = torch.cat([att(unique_entity_embed, edge_list, edge_embed, edge_type, flag=True)  # flag=True代表对关系做变换
+                         for att in self.attentions], dim=1)
+        x_r = self.dropout_layer(x_r[0:unique_relation_embed.shape[0]])
+
+        out_entity_embed = unique_entity_embed.mm(self.W_2)  # 对实体做变换，和更新头实体时不一样的参数
+        out_relation_embed_2 = x_r[edge_type]
+        x_r = F.elu(self.out_att(out_entity_embed, edge_list, out_relation_embed_2, edge_type, flag = True))
+        x_r = x_r[0:unique_relation_embed.shape[0]]#记得修改长度为len()
+        return x, x_r
 
 class SpKBGATModified(nn.Module):
     def __init__(self, initial_entity_emb, initial_relation_emb, entity_out_dim, relation_out_dim,

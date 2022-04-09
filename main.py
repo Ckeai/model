@@ -51,7 +51,7 @@ def parse_args():
     #args.add_argument("-outfolder", "--output_folder",
     #                  default="./checkpoints/wn/out/", help="Folder name to save the models.")
     args.add_argument("-outfolder", "--output_folder",
-                     default="./checkpoints/", help="Folder name to save the models.")
+                     default="/home/hsm/debug/checkpoints/", help="Folder name to save the models.")
 
     # arguments for GAT
     args.add_argument("-b_gat", "--batch_size_gat", type=int,

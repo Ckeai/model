@@ -74,7 +74,7 @@ class SpecialSpmmFinal(nn.Module):
     def forward(self, edge, edge_w, N, E, out_features):
         return SpecialSpmmFunctionFinal.apply(edge, edge_w, N, E, out_features)
 
-
+'''
 class SpGraphAttentionLayer(nn.Module):
     """
     Sparse version GAT layer, similar to https://arxiv.org/abs/1710.10903
@@ -159,3 +159,97 @@ class SpGraphAttentionLayer(nn.Module):
 
 def __repr__(self):
     return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
+'''
+
+
+class SpGraphAttentionLayer(nn.Module):
+    """
+    Sparse version GAT layer, similar to https://arxiv.org/abs/1710.10903
+    """
+
+    def __init__(self, num_nodes, in_features, out_features, nrela_dim, dropout, alpha, concat=True):
+        super(SpGraphAttentionLayer, self).__init__()
+        self.in_features = in_features  # 输入维度
+        self.out_features = out_features  # 输出维度
+        self.num_nodes = num_nodes
+        self.alpha = alpha
+        self.concat = concat
+        self.nrela_dim = nrela_dim  # 关系维度
+
+        # 应该是对拼接后的头尾关系做线性转换的W_1，初始化参数
+        self.a = nn.Parameter(torch.zeros(
+            size=(out_features, 2 * in_features + nrela_dim)))
+        nn.init.xavier_normal_(self.a.data, gain=1.414)
+        # 初始化a^T
+        self.a_2 = nn.Parameter(torch.zeros(size=(1, out_features)))
+        nn.init.xavier_normal_(self.a_2.data, gain=1.414)
+
+        # hsm 为关系更新的注意力层设置可学习参数
+        self.a_r = nn.Parameter(torch.zeros(
+            size=(out_features, 2 * in_features + nrela_dim)))
+        nn.init.xavier_normal_(self.a_r.data, gain=1.414)
+        # 初始化a^T
+        self.a_r_2 = nn.Parameter(torch.zeros(size=(1, out_features)))
+        nn.init.xavier_normal_(self.a_r_2.data, gain=1.414)
+
+        self.dropout = nn.Dropout(dropout)
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+        self.special_spmm_final = SpecialSpmmFinal()
+
+    def forward(self, input, edge_list, edge_embed, edge_type, flag):
+        #input:unique_entity_embed
+        N = input.size()[0]
+
+        # (hsm)对triple中的h,r,t进行拼接
+        edge_h = torch.cat(
+            (input[edge_list[0, :], :], input[edge_list[1, :], :], edge_embed[:, :]), dim=1).t()  # 将edge_list中的头、尾id对应的向量取出，与关系按列拼接，扩展维度 ，并转置
+        # edge_h: (2*in_dim + rela_dim) x E
+
+        # hsm
+        if flag:
+            coordinate = torch.cat((edge_type.unsqueeze(0), edge_list[0].unsqueeze(0)), dim=0)
+            edge_m = self.a_r.mm(edge_h)  # c_(ijk)
+            powers = -self.leakyrelu(self.a_r_2.mm(edge_m).squeeze())
+          #  row = edge_type.max()
+        else:
+            coordinate = edge_list
+            edge_m = self.a.mm(edge_h)  # c_(ijk)
+            # edge_m: D * E
+            # to be checked later
+            powers = -self.leakyrelu(self.a_2.mm(edge_m).squeeze())#b_(ijk)
+           # row = N
+
+        edge_e = torch.exp(powers).unsqueeze(1)  # exp(b_ijk)
+        assert not torch.isnan(edge_e).any()  # 判断是否有元素为0
+        # edge_e: E
+
+
+        e_rowsum = self.special_spmm_final(
+            coordinate, edge_e, N, edge_e.shape[0], 1)
+        e_rowsum[e_rowsum == 0.0] = 1e-12
+
+        e_rowsum = e_rowsum  # 元素是每个实体的邻居注意力之和，即softmax的分母 \sum exp(b_(ijk))
+        # e_rowsum: N x 1
+        edge_e = edge_e.squeeze(1)
+
+        edge_e = self.dropout(edge_e)
+        # edge_e: E
+
+        edge_w = (edge_e * edge_m).t()  # exp(b_(ijk))*c_(ijk)
+        # edge_w: E * D
+
+        h_prime = self.special_spmm_final(
+            coordinate, edge_w, N, edge_w.shape[0], self.out_features)  # 用注意力对实体聚合信息了 \sum exp(b_(ijk))*c_(ijk)
+
+        assert not torch.isnan(h_prime).any()
+        # h_prime: N x out
+        h_prime = h_prime.div(e_rowsum)
+        # h_prime: N x out
+
+        assert not torch.isnan(h_prime).any()
+        if self.concat:
+            # if this layer is not last layer,
+            return F.elu(h_prime)
+        else:
+            # if this layer is last layer,
+            return h_prime
