@@ -189,17 +189,6 @@ def train_gat(args):
 
     gat_loss_func = nn.MarginRankingLoss(margin=args.margin)
 
-    current_batch_2hop_indices = torch.tensor([])
-    if(args.use_2hop):
-        current_batch_2hop_indices = Corpus_.get_batch_nhop_neighbors_all(args,
-                                                                          Corpus_.unique_entities_train, node_neighbors_2hop)
-
-        if CUDA:
-            current_batch_2hop_indices = Variable(
-                torch.LongTensor(current_batch_2hop_indices)).cuda()
-        else:
-            current_batch_2hop_indices = Variable(
-                torch.LongTensor(current_batch_2hop_indices))
 
     epoch_losses = []   # losses of all epochs
     print("Number of epochs {}".format(args.epochs_gat))

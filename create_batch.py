@@ -382,8 +382,8 @@ class Corpus:
                 if(batch_indices[i, 0] not in unique_entities or batch_indices[i, 2] not in unique_entities):
                     continue
 
-                new_x_batch_head[:, 0] = entity_list
-                new_x_batch_tail[:, 2] = entity_list
+                new_x_batch_head[:, 0] = entity_list#1-N方式 triple中的h有N种(h,r,t)替换头，包含有一个正确的三元组
+                new_x_batch_tail[:, 2] = entity_list#
 
                 last_index_head = []  # array of already existing triples
                 last_index_tail = []
