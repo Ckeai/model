@@ -3,4 +3,4 @@
 2. 新的关系![](http://latex.codecogs.com/svg.latex?\hat{r})是关系![](http://latex.codecogs.com/svg.latex?{r})对应的所有head和tail进行hyper后求均值学来的，未使用残差来连接来补充![](http://latex.codecogs.com/svg.latex?\hat{r})
 	
 ### Result
-![image]()
+![image](https://github.com/Ckeai/model/blob/neiborGAT_rhyper/result_v2.png)
